@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI合議室</title>
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="script.js?v=4" defer></script>
+</head>
+<body>
+    <div class="background-effects">
+        <div class="glow-orb orb-1"></div>
+        <div class="glow-orb orb-2"></div>
+    </div>
+    <div class="app-layout">
+        <!-- サイドバー (チャット履歴) -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>履歴</h2>
+                <button class="btn-new-chat" id="btn-new-chat" title="新しい合議を開始">➕</button>
+            </div>
+            <div class="history-list-container">
+                <ul class="history-list" id="history-list">
+                    <!-- 履歴アイテムがJSで挿入される -->
+                </ul>
+                <div class="history-empty" id="history-empty">履歴がありません</div>
+                <div class="history-login-prompt" id="history-login-prompt">
+                    履歴を保存・閲覧するには<br>ログインしてください
+                </div>
+            </div>
+        </aside>
+
+        <!-- メインコンテンツ領域 -->
+        <div class="container">
+            <header>
+                <h1>AI合議室</h1>
+                <p>複数のAIに質問し、それぞれの回答を比較して最終回答を作成します。</p>
+                <div class="header-actions">
+                    <button class="btn-auth hidden" id="auth-login" title="Googleでログイン">ログイン</button>
+                    <div class="user-profile hidden" id="user-profile">
+                        <img src="" alt="User Avatar" class="user-avatar" id="user-avatar">
+                        <button class="btn-auth" id="auth-logout" title="ログアウト">ログアウト</button>
+                    </div>
+                    <button class="btn-settings" id="settings-button" title="APIキー設定">⚙️</button>
+                </div>
+            </header>
+
+        <!-- ステータスインジケーター -->
+        <div class="status-indicator" id="status-indicator">
+            <div class="step active" id="step-1">質問受付</div>
+            <div class="step" id="step-2">AI回答生成中</div>
+            <div class="step" id="step-3">比較・評価中</div>
+            <div class="step" id="step-4">統合判断</div>
+            <div class="step" id="step-5">完了</div>
+        </div>
+
+        <main>
+            <!-- 質問入力エリア -->
+            <section class="card input-section" id="input-area">
+                <textarea id="question-input" placeholder="質問を入力してください（例：小学校の授業でタブレットを活用するメリットとデメリットを教えてください）"></textarea>
+                <button id="submit-button" class="btn-primary">合議開始</button>
+            </section>
+
+            <!-- AI個別回答エリア（3カラム均等配置） -->
+            <section class="ai-grid hidden" id="ai-grid">
+                <!-- Gemini -->
+                <div class="ai-card gemini-theme" id="gemini-card">
+                    <div class="ai-header">
+                        <h2>Gemini</h2>
+                        <span class="ai-model-label">gemini-3.5-flash</span>
+                        <span class="status-badge" id="gemini-status">待機中</span>
+                    </div>
+                    <div class="ai-content" id="gemini-content"></div>
+                    <div class="ai-evaluation hidden" id="gemini-eval">
+                        <h4>議長AIの評価</h4>
+                        <div class="eval-scores">
+                            <div class="eval-score-item">
+                                <span class="eval-label">正確性</span>
+                                <div class="score-bar"><div class="score-fill gemini-fill" style="width: 0%"></div></div>
+                                <span class="score">0/10</span>
+                            </div>
+                            <div class="eval-score-item">
+                                <span class="eval-label">論理性</span>
+                                <div class="score-bar"><div class="score-fill gemini-fill" style="width: 0%"></div></div>
+                                <span class="score">0/10</span>
+                            </div>
+                            <div class="eval-score-item">
+                                <span class="eval-label">実用性</span>
+                                <div class="score-bar"><div class="score-fill gemini-fill" style="width: 0%"></div></div>
+                                <span class="score">0/10</span>
+                            </div>
+                        </div>
+                        <div class="eval-reason"></div>
+                    </div>
+                </div>
+
+                <!-- Groq -->
+                <div class="ai-card groq-theme" id="groq-card">
+                    <div class="ai-header">
+                        <h2>Groq</h2>
+                        <span class="ai-model-label">qwen/qwen3.6-27b</span>
+                        <span class="status-badge" id="groq-status">待機中</span>
+                    </div>
+                    <div class="ai-content" id="groq-content"></div>
+                    <div class="ai-evaluation hidden" id="groq-eval">
+                        <h4>議長AIの評価</h4>
+                        <div class="eval-scores">
+                            <div class="eval-score-item">
+                                <span class="eval-label">正確性</span>
+                                <div class="score-bar"><div class="score-fill groq-fill" style="width: 0%"></div></div>
+                                <span class="score">0/10</span>
+                            </div>
+                            <div class="eval-score-item">
+                                <span class="eval-label">論理性</span>
+                                <div class="score-bar"><div class="score-fill groq-fill" style="width: 0%"></div></div>
+                                <span class="score">0/10</span>
+                            </div>
+                            <div class="eval-score-item">
+                                <span class="eval-label">実用性</span>
+                                <div class="score-bar"><div class="score-fill groq-fill" style="width: 0%"></div></div>
+                                <span class="score">0/10</span>
+                            </div>
+                        </div>
+                        <div class="eval-reason"></div>
+                    </div>
+                </div>
+
+                <!-- OpenRouter -->
+                <div class="ai-card openrouter-theme" id="openrouter-card">
+                    <div class="ai-header">
+                        <h2>OpenRouter</h2>
+                        <span class="ai-model-label">nemotron-3.5-lightning</span>
+                        <span class="status-badge" id="openrouter-status">待機中</span>
+                    </div>
+                    <div class="ai-content" id="openrouter-content"></div>
+                    <div class="ai-evaluation hidden" id="openrouter-eval">
+                        <h4>議長AIの評価</h4>
+                        <div class="eval-scores">
+                            <div class="eval-score-item">
+                                <span class="eval-label">正確性</span>
+                                <div class="score-bar"><div class="score-fill openrouter-fill" style="width: 0%"></div></div>
+                                <span class="score">0/10</span>
+                            </div>
+                            <div class="eval-score-item">
+                                <span class="eval-label">論理性</span>
+                                <div class="score-bar"><div class="score-fill openrouter-fill" style="width: 0%"></div></div>
+                                <span class="score">0/10</span>
+                            </div>
+                            <div class="eval-score-item">
+                                <span class="eval-label">実用性</span>
+                                <div class="score-bar"><div class="score-fill openrouter-fill" style="width: 0%"></div></div>
+                                <span class="score">0/10</span>
+                            </div>
+                        </div>
+                        <div class="eval-reason"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 合議プロセス表示エリア -->
+            <section class="card council-process-section hidden" id="council-process-area">
+                <div class="council-process-header">
+                    <div class="council-icon">&#x2696;</div>
+                    <h2>合議プロセス</h2>
+                    <p class="council-subtitle">議長AI（Gemini）が3つの回答を分析し、統合回答を生成しています</p>
+                </div>
+                <div class="council-flow">
+                    <div class="flow-step" id="flow-collect">
+                        <div class="flow-icon">&#x1F4E5;</div>
+                        <div class="flow-label">🤖 3つのAI回答を収集</div>
+                        <div class="flow-status">⏳ 待機中</div>
+                        <div class="flow-details" id="details-collect"></div>
+                    </div>
+
+                    <div class="flow-connector"></div>
+                    <div class="flow-step" id="flow-evaluate">
+                        <div class="flow-icon">&#x1F4CA;</div>
+                        <div class="flow-label">📊 正確性・論理性・実用性を評価</div>
+                        <div class="flow-status">⏳ 待機中</div>
+                        <div class="flow-details" id="details-evaluate"></div>
+                    </div>
+                    <div class="flow-connector"></div>
+                    <div class="flow-step" id="flow-synthesize">
+                        <div class="flow-icon">&#x1F4DD;</div>
+                        <div class="flow-label">📝 最適な要素を統合して最終回答を作成</div>
+                        <div class="flow-status">⏳ 待機中</div>
+                        <div class="flow-details" id="details-synthesize"></div>
+                    </div>
+                </div>
+            </section>
+
+
+
+            <!-- 最終回答エリア (完了時に表示) -->
+            <section class="card final-answer-section hidden" id="final-answer-area">
+                <h2 class="highlight-title">最終回答</h2>
+                <div class="trust-level" id="trust-level">合議の信頼度：<span></span></div>
+                <div class="final-content" id="final-content">
+                    <!-- 最終回答テキストが入る -->
+                </div>
+                <div class="council-result">
+                    <h3>合議のポイント</h3>
+                    <ul id="council-details">
+                        <!-- 意見の一致点・分かれた点などが入る -->
+                    </ul>
+                </div>
+            </section>
+        </main>
+    </div> <!-- .container -->
+    </div> <!-- .app-layout -->
+
+    <!-- APIキー設定モーダル -->
+    <div class="modal-overlay hidden" id="settings-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>⚙️ APIキー設定</h2>
+                <button class="modal-close" id="settings-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-description">各AIサービスのAPIキーを入力してください。キーはこのブラウザのみに保存され、サーバーには保存されません。</p>
+                
+                <div class="api-key-group">
+                    <label for="setting-gemini-key">
+                        <span class="key-label-icon gemini-accent">◉</span> Gemini API Key
+                        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" class="key-help-link">取得方法</a>
+                    </label>
+                    <div class="key-input-wrapper">
+                        <input type="password" id="setting-gemini-key" placeholder="AIza..." autocomplete="off">
+                        <button class="btn-toggle-visibility" data-target="setting-gemini-key" title="表示/非表示">👁️</button>
+                    </div>
+                </div>
+                
+                <div class="api-key-group">
+                    <label for="setting-groq-key">
+                        <span class="key-label-icon groq-accent">◉</span> Groq API Key
+                        <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" class="key-help-link">取得方法</a>
+                    </label>
+                    <div class="key-input-wrapper">
+                        <input type="password" id="setting-groq-key" placeholder="gsk_..." autocomplete="off">
+                        <button class="btn-toggle-visibility" data-target="setting-groq-key" title="表示/非表示">👁️</button>
+                    </div>
+                </div>
+                
+                <div class="api-key-group">
+                    <label for="setting-openrouter-key">
+                        <span class="key-label-icon openrouter-accent">◉</span> OpenRouter API Key
+                        <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" class="key-help-link">取得方法</a>
+                    </label>
+                    <div class="key-input-wrapper">
+                        <input type="password" id="setting-openrouter-key" placeholder="sk-or-..." autocomplete="off">
+                        <button class="btn-toggle-visibility" data-target="setting-openrouter-key" title="表示/非表示">👁️</button>
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button class="btn-secondary" id="settings-clear">🗑️ 全てクリア</button>
+                    <button class="btn-primary" id="settings-save">保存</button>
+                </div>
+                <p class="modal-note">🔒 キーはこのブラウザのlocalStorageにのみ保存されます。サーバーには一切保存されません。</p>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>

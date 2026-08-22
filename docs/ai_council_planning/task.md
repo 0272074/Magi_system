@@ -1,0 +1,5 @@
+- [x] 新構成（Gemini・Groq・OpenRouter）移行計画の作成と承認取得
+- [/] Phase A: OpenAI(GPT)関連コードの削除とGemini単独構成への整理
+- [ ] Phase B: Groq APIの接続とUI追加
+- [ ] Phase C: OpenRouter APIの接続とUI追加
+- [ ] Walkthroughの作成と完了報告
