@@ -1,4 +1,4 @@
-# AI Council (AI合議システム)
+# Magi_system (AI合議システム)
 
 3つの異なるAI（Gemini, Groq/Llama3, OpenRouter/Claude3等）に対して同時に質問を投げかけ、各AIからの回答を「議長AI（Gemini）」が比較・評価・統合して最終回答を導き出すWebアプリケーションです。
 
