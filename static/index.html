@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI合議室</title>
-    <!-- Google Fonts: Inter -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>Magi system</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -37,8 +37,8 @@
         <!-- メインコンテンツ領域 -->
         <div class="container">
             <header>
-                <h1>AI合議室</h1>
-                <p>複数のAIに質問し、それぞれの回答を比較して最終回答を作成します。</p>
+                <h1>MAGI SYSTEM</h1>
+                <p>3台の独立したスーパーコンピュータによる合議システム</p>
                 <div class="header-actions">
                     <button class="btn-auth hidden" id="auth-login" title="Googleでログイン">ログイン</button>
                     <div class="user-profile hidden" id="user-profile">
@@ -215,17 +215,17 @@
 
     <!-- APIキー設定モーダル -->
     <div class="modal-overlay hidden" id="settings-modal">
-        <div class="modal-content">
+        <div class="modal-content magi-modal">
             <div class="modal-header">
-                <h2>⚙️ APIキー設定</h2>
+                <h2>SYSTEM CONFIGURATION</h2>
                 <button class="modal-close" id="settings-close">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="modal-description">各AIサービスのAPIキーを入力してください。キーはこのブラウザのみに保存され、サーバーには保存されません。</p>
+                <p class="modal-description">Magi system を稼働させるためのAPIキーを設定してください。（入力されたキーはローカルブラウザにのみ保存されます）</p>
                 
                 <div class="api-key-group">
                     <label for="setting-gemini-key">
-                        <span class="key-label-icon gemini-accent">◉</span> Gemini API Key
+                        <span class="key-label-icon gemini-accent">MELCHIOR-1</span> Gemini API Key
                         <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" class="key-help-link">取得方法</a>
                     </label>
                     <div class="key-input-wrapper">
@@ -236,7 +236,7 @@
                 
                 <div class="api-key-group">
                     <label for="setting-groq-key">
-                        <span class="key-label-icon groq-accent">◉</span> Groq API Key
+                        <span class="key-label-icon groq-accent">BALTHASAR-2</span> Groq API Key
                         <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" class="key-help-link">取得方法</a>
                     </label>
                     <div class="key-input-wrapper">
@@ -247,7 +247,7 @@
                 
                 <div class="api-key-group">
                     <label for="setting-openrouter-key">
-                        <span class="key-label-icon openrouter-accent">◉</span> OpenRouter API Key
+                        <span class="key-label-icon openrouter-accent">CASPER-3</span> OpenRouter API Key
                         <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" class="key-help-link">取得方法</a>
                     </label>
                     <div class="key-input-wrapper">
@@ -257,10 +257,27 @@
                 </div>
 
                 <div class="modal-actions">
-                    <button class="btn-secondary" id="settings-clear">🗑️ 全てクリア</button>
-                    <button class="btn-primary" id="settings-save">保存</button>
+                    <button class="btn-secondary" id="settings-clear">CLEAR DATA</button>
+                    <button class="btn-primary" id="settings-save">SAVE CONFIG</button>
                 </div>
-                <p class="modal-note">🔒 キーはこのブラウザのlocalStorageにのみ保存されます。サーバーには一切保存されません。</p>
+                <p class="modal-note">SECURE: キーはサーバーへ送信されません</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 初回オンボーディングモーダル -->
+    <div class="modal-overlay hidden" id="onboarding-modal">
+        <div class="modal-content magi-modal">
+            <div class="modal-header">
+                <h2>WELCOME TO MAGI SYSTEM</h2>
+            </div>
+            <div class="modal-body text-center">
+                <p class="onboarding-text">Magi system へようこそ。<br>このシステムは3つの独立したAIモデルによる合議制意思決定システムです。</p>
+                <p class="onboarding-text">システムを起動するには、各AIのAPIキーの設定が必要です。</p>
+                <div class="modal-actions" style="justify-content: center; margin-top: 2rem;">
+                    <button class="btn-secondary" id="btn-skip-onboarding">スキップ (ローカル.env使用)</button>
+                    <button class="btn-primary" id="btn-start-setup">APIキーを設定する</button>
+                </div>
             </div>
         </div>
     </div>

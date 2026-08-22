@@ -100,8 +100,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // 履歴を読み込む
     async function loadHistory() {
         if (!currentUser) return;
-        const { data, error } = await supabase
-            .from('chat_sessions')
+        const { data, error } = await supabaseClient
+                    .from('chat_sessions')
             .select('id, title, created_at')
             .order('created_at', { ascending: false });
         
@@ -138,8 +138,8 @@ document.addEventListener("DOMContentLoaded", () => {
         document.querySelectorAll(".history-item").forEach(item => item.classList.remove("active"));
         loadHistory(); // 再描画して選択状態を反映
         
-        const { data, error } = await supabase
-            .from('chat_messages')
+        const { data, error } = await supabaseClient
+                    .from('chat_messages')
             .select('*')
             .eq('session_id', sessionId)
             .order('created_at', { ascending: true });
@@ -188,7 +188,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // 新規セッションなら作成
             if (!currentSessionId) {
                 const title = question.length > 20 ? question.substring(0, 20) + "..." : question;
-                const { data: sessionData, error: sessionError } = await supabase
+                const { data: sessionData, error: sessionError } = await supabaseClient
                     .from('chat_sessions')
                     .insert([{ user_id: currentUser.id, title: title }])
                     .select('id')
@@ -199,21 +199,21 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             // メッセージを保存
-            const { error: msgError } = await supabase
+            const { error: msgError } = await supabaseClient
                 .from('chat_messages')
                 .insert([{
                     session_id: currentSessionId,
                     question: question,
-                    gemini_ans: finalData.results.gemini.answer,
-                    groq_ans: finalData.results.groq.answer,
-                    openrouter_ans: finalData.results.openrouter.answer,
+                    gemini_ans: finalData?.results?.gemini?.answer || "",
+                    groq_ans: finalData?.results?.groq?.answer || "",
+                    openrouter_ans: finalData?.results?.openrouter?.answer || "",
                     council_result: {
                         evaluations: {
-                            gemini: finalData.results.gemini.evaluation,
-                            groq: finalData.results.groq.evaluation,
-                            openrouter: finalData.results.openrouter.evaluation
+                            gemini: finalData?.results?.gemini?.evaluation || {},
+                            groq: finalData?.results?.groq?.evaluation || {},
+                            openrouter: finalData?.results?.openrouter?.evaluation || {}
                         },
-                        final_decision: finalData.final_decision
+                        final_decision: finalData?.final_decision || {}
                     }
                 }]);
             
@@ -223,6 +223,16 @@ document.addEventListener("DOMContentLoaded", () => {
             loadHistory();
         } catch (e) {
             console.error("Supabase保存エラー:", e);
+            const toast = document.createElement("div");
+            toast.className = "toast";
+            toast.style.background = "var(--openrouter-color)"; // Red color for error
+            toast.textContent = "⚠️ 履歴の保存に失敗しました";
+            document.body.appendChild(toast);
+            setTimeout(() => toast.classList.add("show"), 10);
+            setTimeout(() => {
+                toast.classList.remove("show");
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
         }
     }
 
@@ -264,6 +274,33 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.classList.toggle("has-keys", hasAnyKey);
     }
     updateSettingsButtonState();
+
+    // ==========================================
+    // 初回オンボーディング (Magi system起動処理)
+    // ==========================================
+    const onboardingModal = document.getElementById("onboarding-modal");
+    const btnSkipOnboarding = document.getElementById("btn-skip-onboarding");
+    const btnStartSetup = document.getElementById("btn-start-setup");
+
+    // 起動時にキーが一つも無ければオンボーディングを表示（ただしセッションストレージで一度スキップした場合は出さない）
+    if (!Object.values(getApiKeys()).some(v => v) && !sessionStorage.getItem("magi_onboarding_skipped")) {
+        onboardingModal.classList.remove("hidden");
+    }
+
+    btnSkipOnboarding.addEventListener("click", () => {
+        sessionStorage.setItem("magi_onboarding_skipped", "true");
+        onboardingModal.classList.add("hidden");
+    });
+
+    btnStartSetup.addEventListener("click", () => {
+        onboardingModal.classList.add("hidden");
+        // 設定モーダルを開く処理
+        const keys = getApiKeys();
+        document.getElementById("setting-gemini-key").value = keys.gemini_api_key || "";
+        document.getElementById("setting-groq-key").value = keys.groq_api_key || "";
+        document.getElementById("setting-openrouter-key").value = keys.openrouter_api_key || "";
+        document.getElementById("settings-modal").classList.remove("hidden");
+    });
 
     submitButton.addEventListener("click", async () => {
         const question = questionInput.value.trim();
