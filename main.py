@@ -108,7 +108,7 @@ async def get_openrouter_answer(question: str, api_key: Optional[str] = None) ->
                 {"role": "system", "content": "ユーザーの質問に対して、論理的かつ正確に、わかりやすく回答してください。ユーザーの質問が日本語の場合は、必ず日本語で回答してください。"},
                 {"role": "user", "content": question}
             ],
-            model="nvidia/nemotron-3.5-lightning:free",
+            model="google/gemma-4-31b-it:free",
             temperature=0.7,
             max_tokens=4096,
             timeout=15.0
