@@ -1,4 +1,4 @@
-// AI合議室 JavaScript (Gemini, Groq, OpenRouter版)
+// Magi system JavaScript — 合議構成の柔軟化対応版
 
 // Supabase初期化
 const SUPABASE_URL = "https://azzsorczzufhmtnzotpo.supabase.co";
@@ -6,6 +6,58 @@ const SUPABASE_KEY = "sb_publishable_-3XPDW_0hzOSiPd1ECGsXA_Nd3QWkgY";
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let currentUser = null;
 let currentSessionId = null;
+
+// ==========================================
+// AIサービス情報（フロントエンド用）
+// ==========================================
+const SERVICE_INFO = {
+    gemini:     { name: "Gemini",      theme: "gemini-theme",     fillClass: "gemini-fill",     color: "var(--gemini-color)" },
+    groq:       { name: "Groq",        theme: "groq-theme",       fillClass: "groq-fill",       color: "var(--groq-color)" },
+    openrouter: { name: "OpenRouter",  theme: "openrouter-theme", fillClass: "openrouter-fill", color: "var(--openrouter-color)" }
+};
+
+const ROLE_INFO = {
+    "basic": { name: "基本分析", desc: "中立的に問題を整理" },
+    "critic": { name: "批判的検討", desc: "問題点・反例・リスクを探す" },
+    "alternative": { name: "別視点", desc: "普通とは違う考え方を探す" },
+    "expert": { name: "専門分析", desc: "根拠・専門知識を重視" },
+    "user": { name: "利用者視点", desc: "実際の生活・実行可能性を重視" }
+};
+
+// ==========================================
+// 合議構成管理
+// ==========================================
+const DEFAULT_COUNCIL_CONFIG = {
+    members: [
+        { service: "gemini", role: "basic" },
+        { service: "gemini", role: "critic" },
+        { service: "gemini", role: "alternative" }
+    ],
+    chair: "gemini"
+};
+
+function getCouncilConfig() {
+    const saved = localStorage.getItem("magi_council_config");
+    if (saved) {
+        try { 
+            let config = JSON.parse(saved); 
+            // マイグレーション処理
+            if (config.members && config.members.length > 0 && typeof config.members[0] === 'string') {
+                const defaultRoles = ["basic", "critic", "alternative", "expert", "user"];
+                config.members = config.members.map((svc, i) => {
+                    return { service: svc, role: defaultRoles[i % defaultRoles.length] };
+                });
+                saveCouncilConfig(config);
+            }
+            return config;
+        } catch (e) { /* fallthrough */ }
+    }
+    return JSON.parse(JSON.stringify(DEFAULT_COUNCIL_CONFIG));
+}
+
+function saveCouncilConfig(config) {
+    localStorage.setItem("magi_council_config", JSON.stringify(config));
+}
 
 document.addEventListener("DOMContentLoaded", () => {
     const submitButton = document.getElementById("submit-button");
@@ -153,23 +205,43 @@ document.addEventListener("DOMContentLoaded", () => {
         questionInput.value = msg.question;
         
         // 再描画
-        aiGrid.classList.remove("hidden");
         finalAnswerArea.classList.remove("hidden");
         councilProcessArea.classList.add("hidden");
         updateStep(5);
 
-        // AI回答の描画
-        if (msg.gemini_ans) document.getElementById("gemini-content").innerHTML = renderMarkdown(msg.gemini_ans);
-        if (msg.groq_ans) document.getElementById("groq-content").innerHTML = renderMarkdown(msg.groq_ans);
-        if (msg.openrouter_ans) document.getElementById("openrouter-ans")?.innerHTML || (document.getElementById("openrouter-content").innerHTML = renderMarkdown(msg.openrouter_ans));
+        // 履歴データからAIカードを復元
+        // 旧形式（gemini_ans, groq_ans, openrouter_ans）との互換性を維持
+        const config = getCouncilConfig();
+        const historyMembers = [];
+
+        if (msg.gemini_ans) historyMembers.push({ service: "gemini", role: "basic", answer: msg.gemini_ans });
+        if (msg.groq_ans) historyMembers.push({ service: "groq", role: "critic", answer: msg.groq_ans });
+        if (msg.openrouter_ans) historyMembers.push({ service: "openrouter", role: "alternative", answer: msg.openrouter_ans });
+
+        // カードがなければ現在の構成で復元
+        if (historyMembers.length === 0) {
+            historyMembers.push(...config.members.map(m => ({ service: m.service, role: m.role, answer: "" })));
+        }
+
+        renderAiCards(historyMembers);
+        aiGrid.classList.remove("hidden");
+
+        historyMembers.forEach((m, i) => {
+            const memberId = `member_${i + 1}`;
+            if (m.answer) {
+                document.getElementById(`${memberId}-content`).innerHTML = renderMarkdown(m.answer);
+            }
+        });
         
         // 評価と最終結果の描画
         if (msg.council_result) {
             const evals = msg.council_result.evaluations;
             if (evals) {
-                ["gemini", "groq", "openrouter"].forEach(ai => {
-                    const e = evals[ai];
-                    if (e) showEvaluation(ai, e.accuracy, e.logic, e.practicality, e.reason);
+                // 新形式（member_1, member_2, member_3）を優先、旧形式（gemini, groq, openrouter）もフォールバック
+                const evalKeys = Object.keys(evals);
+                evalKeys.forEach(key => {
+                    const e = evals[key];
+                    if (e) showEvaluation(key, e.accuracy, e.logic, e.practicality, e.reason);
                 });
             }
             const fd = msg.council_result.final_decision;
@@ -198,21 +270,45 @@ document.addEventListener("DOMContentLoaded", () => {
                 currentSessionId = sessionData.id;
             }
 
-            // メッセージを保存
+            // メンバーベースのデータを既存カラムにマッピング
+            // 既存テーブル構造: gemini_ans, groq_ans, openrouter_ans
+            const memberAnswers = { gemini_ans: "", groq_ans: "", openrouter_ans: "" };
+            if (finalData.members) {
+                finalData.members.forEach((m, i) => {
+                    // 最初に見つかった各サービスの回答を保存
+                    const colName = `${m.service_key}_ans`;
+                    if (colName in memberAnswers && !memberAnswers[colName]) {
+                        memberAnswers[colName] = m.answer || "";
+                    }
+                });
+                // サービスキーでマッチしなかったメンバーの回答もフォールバック保存
+                const cols = ["gemini_ans", "groq_ans", "openrouter_ans"];
+                let colIdx = 0;
+                finalData.members.forEach(m => {
+                    const colName = `${m.service_key}_ans`;
+                    if (!(colName in memberAnswers) || memberAnswers[colName]) return;
+                    // すでに保存済みなのでスキップ
+                });
+            }
+
+            // 評価データ（新形式のmember_1等をそのまま保存）
+            const evalData = {};
+            if (finalData.members) {
+                finalData.members.forEach(m => {
+                    evalData[m.id] = m.evaluation || {};
+                });
+            }
+
             const { error: msgError } = await supabaseClient
                 .from('chat_messages')
                 .insert([{
                     session_id: currentSessionId,
                     question: question,
-                    gemini_ans: finalData?.results?.gemini?.answer || "",
-                    groq_ans: finalData?.results?.groq?.answer || "",
-                    openrouter_ans: finalData?.results?.openrouter?.answer || "",
+                    gemini_ans: memberAnswers.gemini_ans,
+                    groq_ans: memberAnswers.groq_ans,
+                    openrouter_ans: memberAnswers.openrouter_ans,
                     council_result: {
-                        evaluations: {
-                            gemini: finalData?.results?.gemini?.evaluation || {},
-                            groq: finalData?.results?.groq?.evaluation || {},
-                            openrouter: finalData?.results?.openrouter?.evaluation || {}
-                        },
+                        evaluations: evalData,
                         final_decision: finalData?.final_decision || {}
                     }
                 }]);
@@ -225,7 +321,7 @@ document.addEventListener("DOMContentLoaded", () => {
             console.error("Supabase保存エラー:", e);
             const toast = document.createElement("div");
             toast.className = "toast";
-            toast.style.background = "var(--openrouter-color)"; // Red color for error
+            toast.style.background = "var(--openrouter-color)";
             toast.textContent = "⚠️ 履歴の保存に失敗しました";
             document.body.appendChild(toast);
             setTimeout(() => toast.classList.add("show"), 10);
@@ -276,13 +372,230 @@ document.addEventListener("DOMContentLoaded", () => {
     updateSettingsButtonState();
 
     // ==========================================
+    // 合議構成UI
+    // ==========================================
+    function updateConfigSummary() {
+        const config = getCouncilConfig();
+        const summary = document.getElementById("config-summary");
+        if (!summary) return;
+
+        const memberNames = config.members.map(m => 
+            `<span class="service-name">${SERVICE_INFO[m.service]?.name || m.service}（${ROLE_INFO[m.role]?.name || m.role}）</span>`
+        ).join('<span class="separator"> / </span>');
+        const chairName = `<span class="service-name">${SERVICE_INFO[config.chair]?.name || config.chair}</span>`;
+
+        summary.innerHTML = `メンバー：${memberNames}<br><span class="arrow">↓</span><br>議長：${chairName}`;
+    }
+
+    let tempMembers = [];
+
+    function renderConfigMembers() {
+        const container = document.getElementById("config-members-container");
+        if (!container) return;
+        
+        container.innerHTML = "";
+        
+        tempMembers.forEach((m, i) => {
+            const row = document.createElement("div");
+            row.className = "config-member-row";
+            
+            // Service select
+            const serviceSelect = document.createElement("select");
+            serviceSelect.className = "service-select";
+            Object.keys(SERVICE_INFO).forEach(svc => {
+                const opt = document.createElement("option");
+                opt.value = svc;
+                opt.textContent = SERVICE_INFO[svc].name;
+                if (svc === m.service) opt.selected = true;
+                serviceSelect.appendChild(opt);
+            });
+            serviceSelect.addEventListener("change", (e) => { tempMembers[i].service = e.target.value; updateApiPrediction(); });
+            
+            // Role select
+            const roleSelect = document.createElement("select");
+            roleSelect.className = "role-select";
+            Object.keys(ROLE_INFO).forEach(role => {
+                const opt = document.createElement("option");
+                opt.value = role;
+                opt.textContent = ROLE_INFO[role].name;
+                if (role === m.role) opt.selected = true;
+                roleSelect.appendChild(opt);
+            });
+            roleSelect.addEventListener("change", (e) => { tempMembers[i].role = e.target.value; });
+            
+            const label = document.createElement("label");
+            label.textContent = `メンバー${i + 1}`;
+            
+            row.appendChild(label);
+            row.appendChild(serviceSelect);
+            row.appendChild(roleSelect);
+            
+            // 削除ボタン (最低3つは維持)
+            if (tempMembers.length > 3) {
+                const removeBtn = document.createElement("button");
+                removeBtn.className = "btn-remove-member";
+                removeBtn.textContent = "✖";
+                removeBtn.title = "メンバーを削除";
+                removeBtn.addEventListener("click", () => {
+                    tempMembers.splice(i, 1);
+                    renderConfigMembers();
+                });
+                row.appendChild(removeBtn);
+            }
+            
+            container.appendChild(row);
+        });
+        
+        const btnAdd = document.getElementById("btn-add-member");
+        if (btnAdd) {
+            btnAdd.style.display = tempMembers.length >= 5 ? "none" : "inline-block";
+        }
+        
+        updateApiPrediction();
+    }
+    
+    function updateApiPrediction() {
+        const container = document.getElementById("api-usage-prediction");
+        if (!container) return;
+        
+        const counts = {};
+        tempMembers.forEach(m => { counts[m.service] = (counts[m.service] || 0) + 1; });
+        const chairSvc = document.getElementById("config-chair")?.value || "gemini";
+        counts[chairSvc] = (counts[chairSvc] || 0) + 1;
+        
+        let html = "<strong>APIリクエスト予定数（1回あたり）</strong><br>";
+        Object.keys(counts).forEach(svc => {
+            html += `${SERVICE_INFO[svc].name}: ${counts[svc]}回<br>`;
+        });
+        
+        const warnings = [];
+        if (counts["gemini"] >= 4) {
+            warnings.push("Geminiの呼び出し回数が多いため、無料APIではリクエスト制限（429エラー）が発生しやすくなります。");
+        }
+        
+        if (warnings.length > 0) {
+            html += `<div class="warning-text">${warnings.join("<br>")}</div>`;
+        }
+        
+        container.innerHTML = html;
+    }
+
+    const btnAddMember = document.getElementById("btn-add-member");
+    if (btnAddMember) {
+        btnAddMember.addEventListener("click", () => {
+            if (tempMembers.length < 5) {
+                tempMembers.push({ service: "gemini", role: "basic" });
+                renderConfigMembers();
+            }
+        });
+    }
+
+    function syncConfigUI() {
+        const config = getCouncilConfig();
+        tempMembers = JSON.parse(JSON.stringify(config.members));
+        renderConfigMembers();
+        
+        const ch = document.getElementById("config-chair");
+        if (ch) ch.value = config.chair || "gemini";
+        
+        updateApiPrediction();
+    }
+
+    // 初期表示
+    updateConfigSummary();
+    syncConfigUI();
+
+    document.getElementById("config-chair")?.addEventListener("change", updateApiPrediction);
+
+    // 詳細設定ボタン
+    const btnConfigToggle = document.getElementById("btn-config-toggle");
+    const advancedConfig = document.getElementById("advanced-config");
+    if (btnConfigToggle && advancedConfig) {
+        btnConfigToggle.addEventListener("click", () => {
+            advancedConfig.classList.toggle("hidden");
+            syncConfigUI();
+        });
+    }
+
+    // 構成保存ボタン
+    const btnConfigSave = document.getElementById("btn-config-save");
+    if (btnConfigSave) {
+        btnConfigSave.addEventListener("click", () => {
+            const config = {
+                members: tempMembers,
+                chair: document.getElementById("config-chair").value
+            };
+            saveCouncilConfig(config);
+            updateConfigSummary();
+            advancedConfig.classList.add("hidden");
+
+            // 保存完了トースト
+            const toast = document.createElement("div");
+            toast.className = "toast";
+            toast.textContent = "✅ 合議構成を保存しました";
+            document.body.appendChild(toast);
+            setTimeout(() => toast.classList.add("show"), 10);
+            setTimeout(() => {
+                toast.classList.remove("show");
+                setTimeout(() => toast.remove(), 300);
+            }, 2500);
+        });
+    }
+
+    // ==========================================
+    // AIカード動的生成
+    // ==========================================
+    function renderAiCards(members) {
+        const grid = document.getElementById("ai-grid");
+        grid.innerHTML = "";
+        members.forEach((m, i) => {
+            const memberId = `member_${i + 1}`;
+            const info = SERVICE_INFO[m.service] || SERVICE_INFO.gemini;
+            const roleName = ROLE_INFO[m.role]?.name || m.role || "基本分析";
+            const card = document.createElement("div");
+            card.className = `ai-card ${info.theme}`;
+            card.id = `${memberId}-card`;
+            card.innerHTML = `
+                <div class="ai-header">
+                    <h2>${info.name}</h2>
+                    <span class="ai-model-label">メンバー${i + 1}（${roleName}）</span>
+                    <span class="status-badge" id="${memberId}-status">待機中</span>
+                </div>
+                <div class="ai-content" id="${memberId}-content"></div>
+                <div class="ai-evaluation hidden" id="${memberId}-eval">
+                    <h4>議長AIの評価</h4>
+                    <div class="eval-scores">
+                        <div class="eval-score-item">
+                            <span class="eval-label">正確性</span>
+                            <div class="score-bar"><div class="score-fill ${info.fillClass}" style="width: 0%"></div></div>
+                            <span class="score">0/10</span>
+                        </div>
+                        <div class="eval-score-item">
+                            <span class="eval-label">論理性</span>
+                            <div class="score-bar"><div class="score-fill ${info.fillClass}" style="width: 0%"></div></div>
+                            <span class="score">0/10</span>
+                        </div>
+                        <div class="eval-score-item">
+                            <span class="eval-label">実用性</span>
+                            <div class="score-bar"><div class="score-fill ${info.fillClass}" style="width: 0%"></div></div>
+                            <span class="score">0/10</span>
+                        </div>
+                    </div>
+                    <div class="eval-reason"></div>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+    }
+
+    // ==========================================
     // 初回オンボーディング (Magi system起動処理)
     // ==========================================
     const onboardingModal = document.getElementById("onboarding-modal");
     const btnSkipOnboarding = document.getElementById("btn-skip-onboarding");
     const btnStartSetup = document.getElementById("btn-start-setup");
 
-    // 起動時にキーが一つも無ければオンボーディングを表示（ただしセッションストレージで一度スキップした場合は出さない）
+    // 起動時にキーが一つも無ければオンボーディングを表示
     if (!Object.values(getApiKeys()).some(v => v) && !sessionStorage.getItem("magi_onboarding_skipped")) {
         onboardingModal.classList.remove("hidden");
     }
@@ -294,7 +607,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     btnStartSetup.addEventListener("click", () => {
         onboardingModal.classList.add("hidden");
-        // 設定モーダルを開く処理
         const keys = getApiKeys();
         document.getElementById("setting-gemini-key").value = keys.gemini_api_key || "";
         document.getElementById("setting-groq-key").value = keys.groq_api_key || "";
@@ -302,6 +614,9 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("settings-modal").classList.remove("hidden");
     });
 
+    // ==========================================
+    // 合議開始ボタン
+    // ==========================================
     submitButton.addEventListener("click", async () => {
         const question = questionInput.value.trim();
         if (!question) {
@@ -309,9 +624,26 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        const config = getCouncilConfig();
+        const apiKeys = getApiKeys();
+
+        // APIキー不足の警告チェック（.envフォールバックがあるため警告のみ）
+        const requiredServices = [...new Set([...config.members, config.chair])];
+        const missingServices = requiredServices.filter(s => !apiKeys[`${s}_api_key`]);
+        if (missingServices.length > 0) {
+            const names = missingServices.map(s => SERVICE_INFO[s]?.name || s).join(", ");
+            const proceed = confirm(
+                `${names} のAPIキーが設定されていません。\n\nサーバー側に.envの設定がある場合は動作します。\n続行しますか？`
+            );
+            if (!proceed) return;
+        }
+
         // 初期化・UI変更
         submitButton.disabled = true;
         submitButton.textContent = "処理中...";
+        
+        // 合議構成に基づいてAIカードを動的生成
+        renderAiCards(config.members);
         aiGrid.classList.remove("hidden");
         finalAnswerArea.classList.add("hidden");
         councilProcessArea.classList.add("hidden");
@@ -319,24 +651,28 @@ document.addEventListener("DOMContentLoaded", () => {
         // UIステータスを「AI回答生成中」に
         updateStep(1);
         
-        // 全AIをローディング状態に
-        ["gemini", "groq", "openrouter"].forEach(ai => {
-            setAiStatus(ai, "loading", "回答生成中...");
-            clearAiContent(ai);
+        // 全メンバーをローディング状態に
+        config.members.forEach((m, i) => {
+            const memberId = `member_${i + 1}`;
+            setAiStatus(memberId, "loading", "回答生成中...");
         });
 
         // 合議プロセスフローをリセット
         resetFlowSteps();
 
         try {
-            // バックエンドAPIへリクエスト送信（APIキーを含む）
-            const apiKeys = getApiKeys();
+            // バックエンドAPIへリクエスト送信（APIキー + 構成を含む）
             const response = await fetch('/api/council', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ question: question, ...apiKeys })
+                body: JSON.stringify({
+                    question: question,
+                    ...apiKeys,
+                    members: config.members,
+                    chair: config.chair
+                })
             });
 
             if (!response.ok) {
@@ -363,8 +699,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (activeTimerInterval) clearInterval(activeTimerInterval);
             };
 
-            // AIの完了状態を管理
-            const aiStatus = { gemini: false, groq: false, openrouter: false };
+            // メンバーの完了状態を管理（動的）
+            const memberStatus = {};
+            config.members.forEach((_, i) => { memberStatus[`member_${i+1}`] = false; });
 
             // SSE ストリーム読み込み
             const reader = response.body.getReader();
@@ -374,13 +711,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
             councilProcessArea.classList.remove("hidden");
             
-            // 初期の待機中UIセットアップ
+            // 合議プロセスの収集状況を動的生成
             setFlowStep("collect", "active", "⏳ 待機中");
-            document.getElementById("details-collect").innerHTML = `
-                <div id="ai-collect-gemini">Gemini：⏳ 待機中</div>
-                <div id="ai-collect-groq">Groq：⏳ 待機中</div>
-                <div id="ai-collect-openrouter">OpenRouter：⏳ 待機中</div>
-            `;
+            const collectDetails = document.getElementById("details-collect");
+            collectDetails.innerHTML = config.members.map((m, i) => {
+                const name = SERVICE_INFO[m.service]?.name || m.service;
+                return `<div id="ai-collect-member_${i+1}">${name} (メンバー${i+1})：⏳ 待機中</div>`;
+            }).join("");
             startTimer("#flow-collect .flow-status");
 
             while (true) {
@@ -398,35 +735,68 @@ document.addEventListener("DOMContentLoaded", () => {
                             const event = JSON.parse(jsonStr);
                             
                             if (event.type === "AI_START") {
-                                const aiName = event.ai;
-                                setAiStatus(aiName, "loading", event.message || "回答生成中...");
-                                document.getElementById(`ai-collect-${aiName}`).innerHTML = `${aiName}：🔄 ${event.message || "回答生成中..."}`;
+                                const memberId = event.id || event.ai; // "member_1", "member_2", etc.
+                                setAiStatus(memberId, "loading", event.message || "回答生成中...");
+                                const collectEl = document.getElementById(`ai-collect-${memberId}`);
+                                if (collectEl) {
+                                    const idx = parseInt(memberId.split("_")[1]) - 1;
+                                    const svc = config.members[idx]?.service || config.members[idx];
+                                    const svcName = SERVICE_INFO[svc]?.name || svc;
+                                    collectEl.innerHTML = `${svcName} (メンバー${idx+1})：🔄 ${event.message || "回答生成中..."}`;
+                                }
                             } 
                             else if (event.type === "AI_END") {
-                                const aiName = event.ai;
-                                aiStatus[aiName] = true;
+                                const memberId = event.id || event.ai;
+                                memberStatus[memberId] = true;
                                 if (event.success) {
-                                    setAiStatus(aiName, "done", event.message || "完了");
-                                    document.getElementById(`ai-collect-${aiName}`).innerHTML = `${aiName}：✅ ${event.message || "完了"}`;
+                                    setAiStatus(memberId, "done", event.message || "完了");
+                                    const collectEl = document.getElementById(`ai-collect-${memberId}`);
+                                    if (collectEl) {
+                                        const idx = parseInt(memberId.split("_")[1]) - 1;
+                                        const svc = config.members[idx]?.service || config.members[idx];
+                                        const svcName = SERVICE_INFO[svc]?.name || svc;
+                                        collectEl.innerHTML = `${svcName} (メンバー${idx+1})：✅ ${event.message || "完了"}`;
+                                    }
                                 } else {
-                                    setAiStatus(aiName, "error", event.message || "エラー");
-                                    document.getElementById(`ai-collect-${aiName}`).innerHTML = `${aiName}：⚠️ ${event.message || "タイムアウト (合議は継続)"}`;
-                                    const contentEl = document.getElementById(`${aiName}-content`);
-                                    contentEl.innerHTML = renderMarkdown(event.error);
+                                    setAiStatus(memberId, "error", event.message || "エラー");
+                                    const collectEl = document.getElementById(`ai-collect-${memberId}`);
+                                    if (collectEl) {
+                                        const idx = parseInt(memberId.split("_")[1]) - 1;
+                                        const svc = config.members[idx]?.service || config.members[idx];
+                                        const svcName = SERVICE_INFO[svc]?.name || svc;
+                                        collectEl.innerHTML = `${svcName} (メンバー${idx+1})：⚠️ ${event.message || "エラー"}`;
+                                    }
+                                    const contentEl = document.getElementById(`${memberId}-content`);
+                                    if (contentEl && event.error) contentEl.innerHTML = renderMarkdown(event.error);
                                 }
                                 
                                 // すべて完了したら表示を更新
-                                if (aiStatus.gemini && aiStatus.groq && aiStatus.openrouter) {
+                                if (Object.values(memberStatus).every(v => v)) {
                                     stopTimer();
                                     document.querySelector("#flow-collect .flow-status").innerHTML = `✅ 完了 (${currentSeconds}秒)`;
                                 }
+                            }
+                            else if (event.type === "AI_RATE_LIMIT") {
+                                const memberId = event.id || event.ai;
+                                setAiStatus(memberId, "loading", `待機中 (${event.retry_after}s)...`);
+                                const collectEl = document.getElementById(`ai-collect-${memberId}`);
+                                if (collectEl) {
+                                    const idx = parseInt(memberId.split("_")[1]) - 1;
+                                    const svc = config.members[idx]?.service || config.members[idx];
+                                    const svcName = SERVICE_INFO[svc]?.name || svc;
+                                    collectEl.innerHTML = `${svcName} (メンバー${idx+1})：⚠️ API制限のため待機中...`;
+                                }
+                            }
+                            else if (event.type === "AI_QUOTA_EXHAUSTED") {
+                                const memberId = event.id || event.ai;
+                                setAiStatus(memberId, "error", "利用上限超過");
                             }
                             else if (event.type === "COUNCIL_START") {
                                 setFlowStep("evaluate", "active", event.message || "🔄 処理中...");
                                 startTimer("#flow-evaluate .flow-status");
                                 document.getElementById("details-evaluate").innerHTML = event.message || `
-                                    議長AI Gemini が処理しています。<br>
-                                    3つのAI回答を比較・分析しています。
+                                    議長AIが処理しています。<br>
+                                    ${config.members.length}つのAI回答を比較・分析しています。
                                 `;
                             }
                             else if (event.type === "COUNCIL_END") {
@@ -435,6 +805,10 @@ document.addEventListener("DOMContentLoaded", () => {
                             }
                             else if (event.type === "COMPLETE") {
                                 finalData = event.data;
+                            }
+                            else if (event.type === "ERROR") {
+                                console.error("Server error:", event.message);
+                                alert(`サーバーエラー: ${event.message}`);
                             }
                             
                         } catch (e) {
@@ -445,18 +819,23 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             if (finalData) {
-                // 回答の描画
-                ["gemini", "groq", "openrouter"].forEach(ai => {
-                    const ans = finalData.results[ai].answer;
-                    if (!ans.startsWith("エラー")) {
-                        const contentEl = document.getElementById(`${ai}-content`);
-                        contentEl.innerHTML = renderMarkdown(ans);
-                    }
-                    const evalData = finalData.results[ai].evaluation;
-                    showEvaluation(ai, evalData.accuracy, evalData.logic, evalData.practicality, evalData.reason);
-                });
-                
-
+                // メンバーベースで回答を描画
+                if (finalData.members) {
+                    finalData.members.forEach(member => {
+                        const contentEl = document.getElementById(`${member.id}-content`);
+                        if (contentEl && member.answer) {
+                            if (member.answer.startsWith("エラー")) {
+                                contentEl.innerHTML = `<div style="color: #ef4444; padding: 10px; border-left: 3px solid #ef4444; background: rgba(239, 68, 68, 0.1); margin-top: 10px; font-weight: bold;">${escapeHtml(member.answer)}</div>`;
+                                setAiStatus(member.id, "error", "エラー");
+                            } else {
+                                contentEl.innerHTML = renderMarkdown(member.answer);
+                            }
+                        }
+                        if (member.evaluation) {
+                            showEvaluation(member.id, member.evaluation.accuracy, member.evaluation.logic, member.evaluation.practicality, member.evaluation.reason);
+                        }
+                    });
+                }
                 
                 updateStep(4);
                 setFlowStep("synthesize", "active", "✅ 完了");
@@ -482,7 +861,8 @@ document.addEventListener("DOMContentLoaded", () => {
             alert("通信中にエラーが発生しました。");
             submitButton.disabled = false;
             submitButton.textContent = "合議開始";
-            ["gemini", "groq", "openrouter"].forEach(ai => setAiStatus(ai, "error", "通信エラー"));
+            const config = getCouncilConfig();
+            config.members.forEach((_, i) => setAiStatus(`member_${i+1}`, "error", "通信エラー"));
         }
     });
 
@@ -500,19 +880,12 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    function setAiStatus(ai, state, text) {
-        const badge = document.getElementById(`${ai}-status`);
+    function setAiStatus(memberId, state, text) {
+        const badge = document.getElementById(`${memberId}-status`);
         if (badge) {
             badge.className = `status-badge ${state}`;
             badge.textContent = text;
         }
-    }
-
-    function clearAiContent(ai) {
-        const content = document.getElementById(`${ai}-content`);
-        const evalSection = document.getElementById(`${ai}-eval`);
-        if (content) content.innerHTML = "";
-        if (evalSection) evalSection.classList.add("hidden");
     }
 
     // ================================================
@@ -541,8 +914,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // 評価表示（スコアバーアニメーション付き）
     // ================================================
 
-    function showEvaluation(ai, acc, log, pra, reason) {
-        const evalSection = document.getElementById(`${ai}-eval`);
+    function showEvaluation(memberId, acc, log, pra, reason) {
+        const evalSection = document.getElementById(`${memberId}-eval`);
         if (!evalSection) return;
         
         evalSection.classList.remove("hidden");
@@ -569,10 +942,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // テキスト安全変換ユーティリティ
     // ==========================================
 
-    /**
-     * HTMLエスケープ: AIの回答に含まれる <, >, &, " をHTMLエンティティに変換し、
-     * DOMが壊れないようにする。
-     */
     function escapeHtml(text) {
         if (!text) return "";
         const div = document.createElement("div");
@@ -580,50 +949,25 @@ document.addEventListener("DOMContentLoaded", () => {
         return div.innerHTML;
     }
 
-    /**
-     * 簡易マークダウンレンダラー: AIの回答テキストを安全なHTMLに変換する。
-     * まずHTMLエスケープしてから、限定的なマークダウン記法をHTMLに変換する。
-     */
     function renderMarkdown(text) {
         if (!text) return "<p>回答なし</p>";
 
-        // 1. HTMLエスケープ（安全のため必ず最初に実行）
         let html = escapeHtml(text);
 
-        // 2. コードブロック (```...```)
         html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-
-        // 3. インラインコード (`...`)
         html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
-
-        // 4. 見出し (### → h4, ## → h3, # → h2) — 行頭のみ
         html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
         html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
         html = html.replace(/^# (.+)$/gm, '<h2>$1</h2>');
-
-        // 5. 太字 (**...**)
         html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-
-        // 6. 斜体 (*...*)
         html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-
-        // 7. 箇条書き (行頭の - または * または 数字.)
         html = html.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
         html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-        // 連続する<li>を<ul>で囲む
         html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
-
-        // 8. 水平線 (---)
         html = html.replace(/^---$/gm, '<hr>');
-
-        // 9. 改行の処理: 連続する空行は段落の区切り、それ以外は<br>
         html = html.replace(/\n\n+/g, '</p><p>');
         html = html.replace(/\n/g, '<br>');
-
-        // 10. 全体を<p>で囲む
         html = '<p>' + html + '</p>';
-
-        // 11. 空の<p>タグを除去
         html = html.replace(/<p>\s*<\/p>/g, '');
 
         return html;

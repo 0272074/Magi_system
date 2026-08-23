@@ -65,100 +65,49 @@
                 <button id="submit-button" class="btn-primary">合議開始</button>
             </section>
 
-            <!-- AI個別回答エリア（3カラム均等配置） -->
+            <!-- 合議構成表示 -->
+            <div class="council-config" id="council-config">
+                <div class="config-summary" id="config-summary">
+                    <!-- JSで構成サマリーが表示される -->
+                </div>
+                <button class="btn-config-toggle" id="btn-config-toggle">⚙ 詳細設定</button>
+            </div>
+
+            <!-- 詳細設定パネル（通常は非表示） -->
+            <div class="advanced-config card hidden" id="advanced-config">
+                <h3>合議構成の変更</h3>
+                
+                <div id="config-members-container">
+                    <!-- JSで動的にメンバー行が生成される -->
+                </div>
+                
+                <div class="config-member-add">
+                    <button class="btn-secondary" id="btn-add-member">＋ メンバー追加</button>
+                </div>
+                
+                <hr style="border-color: var(--border-color); margin: 15px 0;">
+
+                <div class="config-member-row">
+                    <label for="config-chair">議長</label>
+                    <select id="config-chair">
+                        <option value="gemini">Gemini</option>
+                        <option value="groq">Groq</option>
+                        <option value="openrouter">OpenRouter</option>
+                    </select>
+                </div>
+                
+                <div id="api-usage-prediction" class="api-usage-prediction">
+                    <!-- API使用予測がJSで表示される -->
+                </div>
+                
+                <div class="config-actions">
+                    <button class="btn-primary btn-config-save" id="btn-config-save">構成を保存</button>
+                </div>
+            </div>
+
+            <!-- AI個別回答エリア（JSで動的生成） -->
             <section class="ai-grid hidden" id="ai-grid">
-                <!-- Gemini -->
-                <div class="ai-card gemini-theme" id="gemini-card">
-                    <div class="ai-header">
-                        <h2>Gemini</h2>
-                        <span class="ai-model-label">gemini-3.5-flash</span>
-                        <span class="status-badge" id="gemini-status">待機中</span>
-                    </div>
-                    <div class="ai-content" id="gemini-content"></div>
-                    <div class="ai-evaluation hidden" id="gemini-eval">
-                        <h4>議長AIの評価</h4>
-                        <div class="eval-scores">
-                            <div class="eval-score-item">
-                                <span class="eval-label">正確性</span>
-                                <div class="score-bar"><div class="score-fill gemini-fill" style="width: 0%"></div></div>
-                                <span class="score">0/10</span>
-                            </div>
-                            <div class="eval-score-item">
-                                <span class="eval-label">論理性</span>
-                                <div class="score-bar"><div class="score-fill gemini-fill" style="width: 0%"></div></div>
-                                <span class="score">0/10</span>
-                            </div>
-                            <div class="eval-score-item">
-                                <span class="eval-label">実用性</span>
-                                <div class="score-bar"><div class="score-fill gemini-fill" style="width: 0%"></div></div>
-                                <span class="score">0/10</span>
-                            </div>
-                        </div>
-                        <div class="eval-reason"></div>
-                    </div>
-                </div>
-
-                <!-- Groq -->
-                <div class="ai-card groq-theme" id="groq-card">
-                    <div class="ai-header">
-                        <h2>Groq</h2>
-                        <span class="ai-model-label">qwen/qwen3.6-27b</span>
-                        <span class="status-badge" id="groq-status">待機中</span>
-                    </div>
-                    <div class="ai-content" id="groq-content"></div>
-                    <div class="ai-evaluation hidden" id="groq-eval">
-                        <h4>議長AIの評価</h4>
-                        <div class="eval-scores">
-                            <div class="eval-score-item">
-                                <span class="eval-label">正確性</span>
-                                <div class="score-bar"><div class="score-fill groq-fill" style="width: 0%"></div></div>
-                                <span class="score">0/10</span>
-                            </div>
-                            <div class="eval-score-item">
-                                <span class="eval-label">論理性</span>
-                                <div class="score-bar"><div class="score-fill groq-fill" style="width: 0%"></div></div>
-                                <span class="score">0/10</span>
-                            </div>
-                            <div class="eval-score-item">
-                                <span class="eval-label">実用性</span>
-                                <div class="score-bar"><div class="score-fill groq-fill" style="width: 0%"></div></div>
-                                <span class="score">0/10</span>
-                            </div>
-                        </div>
-                        <div class="eval-reason"></div>
-                    </div>
-                </div>
-
-                <!-- OpenRouter -->
-                <div class="ai-card openrouter-theme" id="openrouter-card">
-                    <div class="ai-header">
-                        <h2>OpenRouter (CASPER-3)</h2>
-                        <span class="ai-model-label">google/gemma-4-31b-it:free</span>
-                        <span class="status-badge" id="openrouter-status">待機中</span>
-                    </div>
-                    <div class="ai-content" id="openrouter-content"></div>
-                    <div class="ai-evaluation hidden" id="openrouter-eval">
-                        <h4>議長AIの評価</h4>
-                        <div class="eval-scores">
-                            <div class="eval-score-item">
-                                <span class="eval-label">正確性</span>
-                                <div class="score-bar"><div class="score-fill openrouter-fill" style="width: 0%"></div></div>
-                                <span class="score">0/10</span>
-                            </div>
-                            <div class="eval-score-item">
-                                <span class="eval-label">論理性</span>
-                                <div class="score-bar"><div class="score-fill openrouter-fill" style="width: 0%"></div></div>
-                                <span class="score">0/10</span>
-                            </div>
-                            <div class="eval-score-item">
-                                <span class="eval-label">実用性</span>
-                                <div class="score-bar"><div class="score-fill openrouter-fill" style="width: 0%"></div></div>
-                                <span class="score">0/10</span>
-                            </div>
-                        </div>
-                        <div class="eval-reason"></div>
-                    </div>
-                </div>
+                <!-- member_1, member_2, member_3 のカードがJSで生成される -->
             </section>
 
             <!-- 合議プロセス表示エリア -->
@@ -225,7 +174,7 @@
                 
                 <div class="api-key-group">
                     <label for="setting-gemini-key">
-                        <span class="key-label-icon gemini-accent">MELCHIOR-1</span> Gemini API Key
+                        <span class="key-label-icon gemini-accent">MELCHIOR-1</span> Gemini API Key <span class="key-required">（必須）</span>
                         <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" class="key-help-link">取得方法</a>
                     </label>
                     <div class="key-input-wrapper">
@@ -236,7 +185,7 @@
                 
                 <div class="api-key-group">
                     <label for="setting-groq-key">
-                        <span class="key-label-icon groq-accent">BALTHASAR-2</span> Groq API Key
+                        <span class="key-label-icon groq-accent">BALTHASAR-2</span> Groq API Key <span class="key-optional">（オプション）</span>
                         <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" class="key-help-link">取得方法</a>
                     </label>
                     <div class="key-input-wrapper">
@@ -247,7 +196,7 @@
                 
                 <div class="api-key-group">
                     <label for="setting-openrouter-key">
-                        <span class="key-label-icon openrouter-accent">CASPER-3</span> OpenRouter API Key
+                        <span class="key-label-icon openrouter-accent">CASPER-3</span> OpenRouter API Key <span class="key-optional">（オプション）</span>
                         <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" class="key-help-link">取得方法</a>
                     </label>
                     <div class="key-input-wrapper">
@@ -272,8 +221,8 @@
                 <h2>WELCOME TO MAGI SYSTEM</h2>
             </div>
             <div class="modal-body text-center">
-                <p class="onboarding-text">Magi system へようこそ。<br>このシステムは3つの独立したAIモデルによる合議制意思決定システムです。</p>
-                <p class="onboarding-text">システムを起動するには、各AIのAPIキーの設定が必要です。</p>
+                <p class="onboarding-text">Magi system へようこそ。<br>このシステムは複数のAIによる合議制意思決定システムです。</p>
+                <p class="onboarding-text">Gemini APIキーを1つ設定するだけで、すぐに合議を開始できます。</p>
                 <div class="modal-actions" style="justify-content: center; margin-top: 2rem;">
                     <button class="btn-secondary" id="btn-skip-onboarding">スキップ (ローカル.env使用)</button>
                     <button class="btn-primary" id="btn-start-setup">APIキーを設定する</button>
